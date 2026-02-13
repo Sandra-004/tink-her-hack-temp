@@ -1,282 +1,553 @@
-import { StyleSheet, Text, View, TouchableOpacity, Alert, Linking } from 'react-native';
-import React, { useState, useEffect } from 'react';
-import * as Location from 'expo-location';
+// Raksha — The Intelligent Guardian
+// Main Application
 
-// --- CONFIGURATION ---
-const EMERGENCY_PHONE = '9496064331';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  StatusBar,
+  SafeAreaView,
+  Platform,
+  TouchableOpacity,
+  Animated,
+} from 'react-native';
+import { Accelerometer } from 'expo-sensors';
+import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 
-// --- HELPERS ---
-const createLocationURL = (lat, long) => `https://www.google.com/maps?q=${lat},${long}`;
+// Components
+import SplashScreen from './src/components/SplashScreen';
+import MenuGrid from './src/components/MenuGrid';
+import SOSSlider from './src/components/SOSSlider';
+import BlackoutScreen from './src/components/BlackoutScreen';
+import FallDetectionAlert from './src/components/FallDetectionAlert';
+import CustomModal from './src/components/CustomModal';
+import FakeCallPopup from './src/components/FakeCallPopup';
+import FakeCallScreen from './src/components/FakeCallScreen';
+import StalkerCallScreen from './src/components/StalkerCallScreen';
+import CabCallScreen from './src/components/CabCallScreen';
+import HistoryScreen from './src/components/HistoryScreen';
 
-const createWhatsAppLink = (phone, message) => {
-    const encodedMessage = encodeURIComponent(message);
-    return `whatsapp://send?text=${encodedMessage}&phone=${phone}`;
-};
+// Config & Utils
+import { COLORS, TYPOGRAPHY, SPACING, FEATURE_FLAGS, FAKE_CALL_CONFIG, SENSOR_THRESHOLDS } from './src/config/constants';
+import { calculateAccelerationMagnitude, FallDetector } from './src/utils/sensorUtils';
+import { requestLocationPermission, sendEmergencyAlert, sendSilentSOS } from './src/utils/locationUtils';
+import {
+  requestAudioPermission,
+  startEvidenceRecording,
+  stopEvidenceRecording,
+  playAudioFile,
+  stopAudioPlayback,
+  startScreamDetection,
+  stopScreamDetection,
+  cleanupAudio,
+} from './src/utils/audioUtils';
 
-const getGPSStatus = (accuracy) => {
-    if (!accuracy) return { status: 'SEARCHING', color: '#FF9500' };
-    if (accuracy < 20) return { status: 'STRONG', color: '#34C759' };
-    if (accuracy < 50) return { status: 'GOOD', color: '#FF9500' };
-    return { status: 'WEAK', color: '#FF3B30' };
-};
+// ─── Audio Assets (drop in src/assets/audio/) ───
+let ringtoneAsset = null;
+let deterrentAsset = null;
+let cabAudioAsset = null;
+let cabDialogueData = null;
 
-const LocationDisplay = ({ location, isLoading }) => {
-    const status = location ? getGPSStatus(location.accuracy) : { status: 'WAITING', color: '#888' };
+try { ringtoneAsset = require('./src/assets/audio/ringtone.mp3'); } catch (e) { }
+try { deterrentAsset = require('./src/assets/audio/deterrent.mp3'); } catch (e) { }
+try { cabAudioAsset = require('./src/assets/audio/cab.mp3'); } catch (e) { }
+try { cabDialogueData = require('./src/assets/audio/cab.json'); } catch (e) { }
 
-    return (
-        <View style={styles.locDis}>
-            <View style={styles.locHead}>
-                <View style={[styles.dot, { backgroundColor: status.color }]} />
-                <Text style={styles.locTxt}>{isLoading ? "LOCATING..." : status.status}</Text>
-            </View>
-            <Text style={styles.coord}>
-                {location ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}` : "--.----, --.----"}
-            </Text>
-        </View>
-    );
-};
+const DEFAULT_CAB_DIALOGUE = [
+  { dialogue: 'Hello, your cab is arriving in 2 minutes', gapMs: 4000 },
+  { dialogue: 'Can you confirm your pickup location?', gapMs: 5000 },
+  { dialogue: 'I am near the main gate, are you there?', gapMs: 4000 },
+  { dialogue: 'Okay, I can see you. Coming now.', gapMs: 3000 },
+];
 
 export default function App() {
-    const [f, setf] = useState(false);
-    const [b, setb] = useState(false);
-    const [location, setLocation] = useState(null);
-    const [isLoading, setIsLoading] = useState(false);
+  // ─── SPLASH ─────────────────────────────────────────────
+  const [showSplash, setShowSplash] = useState(true);
+  const mainOpacity = useRef(new Animated.Value(0)).current;
 
-    useEffect(() => {
-        (async () => {
-            let { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') {
-                Alert.alert('Permission to access location was denied');
-                return;
-            }
-            updateLocation();
-        })();
-    }, []);
+  // ─── CORE STATE ─────────────────────────────────────────
+  const [isGuardActive, setIsGuardActive] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isBlackout, setIsBlackout] = useState(false);
 
-    const updateLocation = async () => {
-        setIsLoading(true);
-        try {
-            let loc = await Location.getCurrentPositionAsync({});
-            setLocation(loc.coords);
-        } catch (e) {
-            console.log(e);
-        }
-        setIsLoading(false);
-    };
+  // Alert
+  const [alertActive, setAlertActive] = useState(false);
+  const [alertType, setAlertType] = useState('fall');
+  const [alertCountdown, setAlertCountdown] = useState(10);
 
-    function press() {
-        if (f == true) {
-            setf(false)
-        } else {
-            setf(true)
-        }
+  // Fake call
+  const [showFakeCallPopup, setShowFakeCallPopup] = useState(false);
+  const [showIncomingCall, setShowIncomingCall] = useState(false);
+  const [showStalkerCall, setShowStalkerCall] = useState(false);
+  const [showCabCall, setShowCabCall] = useState(false);
+  const [fakeCallType, setFakeCallType] = useState(null);
+
+  // History
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Modal
+  const [modalConfig, setModalConfig] = useState({
+    visible: false, title: '', message: '', buttons: [],
+  });
+
+  // ─── REFS ───────────────────────────────────────────────
+  const fallDetector = useRef(new FallDetector());
+  const accelSub = useRef(null);
+  const countdownRef = useRef(null);
+  const recordingRef = useRef(null);
+  const isGuardRef = useRef(false);
+  const isRecordingRef = useRef(false);
+
+  // Keep refs in sync with state (for async callbacks)
+  useEffect(() => { isGuardRef.current = isGuardActive; }, [isGuardActive]);
+  useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
+
+  // ─── INIT ───────────────────────────────────────────────
+  useEffect(() => {
+    initializeApp();
+    return () => cleanup();
+  }, []);
+
+  const initializeApp = async () => {
+    const [loc, audio] = await Promise.all([
+      requestLocationPermission(),
+      requestAudioPermission(),
+    ]);
+    if (!loc || !audio) {
+      showModal('Permissions Required',
+        'Raksha needs Location and Microphone permissions to function properly.',
+        [{ text: 'OK', onPress: hideModal }]
+      );
+    }
+  };
+
+  const cleanup = async () => {
+    stopSensorMonitoring();
+    await cleanupAudio();
+  };
+
+  // ─── SPLASH DONE ────────────────────────────────────────
+  const onSplashFinish = () => {
+    setShowSplash(false);
+    Animated.timing(mainOpacity, {
+      toValue: 1,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  // ─── MODAL ──────────────────────────────────────────────
+  const showModal = (title, message, buttons) => {
+    setModalConfig({ visible: true, title, message, buttons });
+  };
+  const hideModal = () => {
+    setModalConfig({ visible: false, title: '', message: '', buttons: [] });
+  };
+
+  // ─── SENSOR MONITORING ──────────────────────────────────
+  const startSensorMonitoring = () => {
+    try {
+      const sub = Accelerometer.addListener(handleAccelData);
+      Accelerometer.setUpdateInterval(20);
+      accelSub.current = sub;
+    } catch (e) {
+      console.log('[Sensor] Not available:', e);
+    }
+  };
+
+  const stopSensorMonitoring = () => {
+    if (accelSub.current) {
+      accelSub.current.remove();
+      accelSub.current = null;
+    }
+    fallDetector.current.reset();
+  };
+
+  const handleAccelData = (data) => {
+    const mag = calculateAccelerationMagnitude(data.x, data.y, data.z);
+    if (FEATURE_FLAGS.ENABLE_FALL_DETECTION) {
+      const result = fallDetector.current.processAcceleration(mag, Date.now());
+      if (result.fallDetected) triggerAlert('fall');
+    }
+  };
+
+  // ─── GUARD MODE ─────────────────────────────────────────
+  const handleToggleGuard = async () => {
+    const newState = !isGuardActive;
+    setIsGuardActive(newState);
+
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(newState ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Light);
     }
 
-    async function big() {
-        if (f == true) {
-            console.log("sos");
-            setb(true);
+    if (newState) {
+      // Start monitoring
+      startSensorMonitoring();
 
-            // Send Alert
-            let currentLoc = location;
-            if (!currentLoc) {
-                try {
-                    let loc = await Location.getCurrentPositionAsync({});
-                    currentLoc = loc.coords;
-                    setLocation(currentLoc);
-                } catch (e) { }
-            }
+      // Start scream detection if not currently recording
+      if (FEATURE_FLAGS.ENABLE_SCREAM_DETECTION && !isRecordingRef.current) {
+        setTimeout(() => {
+          startScreamDetection(() => triggerAlert('scream'));
+        }, 200);
+      }
 
-            const mapLink = currentLoc
-                ? createLocationURL(currentLoc.latitude, currentLoc.longitude)
-                : "Location unavailable";
+      showModal('Guard Mode Armed',
+        'Fall detection and scream detection are now active.\nSlide SOS bar for emergency.',
+        [{ text: 'OK', onPress: hideModal }]
+      );
+    } else {
+      // Stop everything
+      stopSensorMonitoring();
+      await stopScreamDetection();
+    }
+  };
 
-            const msg = `🚨 HELP! I need assistance.\nLocation: ${mapLink}`;
-            const url = createWhatsAppLink(EMERGENCY_PHONE, msg);
+  // ─── ALERT (FALL / SCREAM) ──────────────────────────────
+  const triggerAlert = (type) => {
+    if (alertActive) return;
+    console.log(`[Alert] ${type.toUpperCase()} detected`);
 
-            Linking.openURL(url).catch(() => {
-                Alert.alert("Error", "Could not open WhatsApp");
-            });
+    setAlertType(type);
+    setAlertActive(true);
+    setAlertCountdown(SENSOR_THRESHOLDS.COUNTDOWN_DURATION);
 
-            setTimeout(() => {
-                setb(false);
-            }, 2000);
-        }
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
 
-    return (
-        <View style={styles.c}>
-            <View style={styles.top}>
-                <Text style={styles.t1}>RAKSHA</Text>
-                <Text style={styles.t2}>The Intelligent Guardian</Text>
-            </View>
+    let secondsLeft = SENSOR_THRESHOLDS.COUNTDOWN_DURATION;
+    countdownRef.current = setInterval(() => {
+      secondsLeft -= 1;
+      setAlertCountdown(secondsLeft);
+      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      if (secondsLeft <= 0) {
+        clearInterval(countdownRef.current);
+        handleAutoSOS();
+      }
+    }, 1000);
+  };
 
-            <View style={styles.mid}>
-                <Text style={styles.l}>GUARD MODE</Text>
-                <TouchableOpacity onPress={press} style={f ? styles.on : styles.off}>
-                    <View style={f ? styles.cir_on : styles.cir_off}></View>
-                </TouchableOpacity>
-                <Text style={f ? styles.s_on : styles.s_off}>{f ? "ARMED" : "STANDBY"}</Text>
-                <LocationDisplay location={location} isLoading={isLoading} />
-            </View>
+  const cancelAlert = () => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    setAlertActive(false);
+    setAlertCountdown(SENSOR_THRESHOLDS.COUNTDOWN_DURATION);
+    fallDetector.current.reset();
+  };
 
-            <View style={styles.bot}>
-                {f ?
-                    <TouchableOpacity onPress={big} style={styles.red}>
-                        <View style={styles.b2}>
-                            <Text style={styles.sos}>SOS</Text>
-                            {b ? <Text style={styles.rec}>RECORDING</Text> : null}
-                        </View>
-                    </TouchableOpacity>
-                    :
-                    <Text style={styles.warn}>ACTIVATE GUARD MODE FIRST</Text>
-                }
-            </View>
+  const handleAutoSOS = async () => {
+    setAlertActive(false);
+    await handleSilentSOS();
+  };
 
-            <View style={styles.f}>
-                <Text style={styles.ft}>{f ? "Protected - System Active" : "Activate Guard Mode to enable protection"}</Text>
+  // ─── SOS ────────────────────────────────────────────────
+  const handleSOSActivated = async () => {
+    console.log('[SOS] Slider activated');
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+
+    // 1. Start recording
+    if (FEATURE_FLAGS.ENABLE_AUDIO_RECORDING && !isRecording) {
+      await handleStartRecording();
+    }
+
+    // 2. Turn on guard mode
+    if (!isGuardActive) {
+      setIsGuardActive(true);
+      startSensorMonitoring();
+      // Don't start scream detection — we just started evidence recording
+    }
+
+    // 3. Send emergency alert
+    await sendEmergencyAlert();
+
+    // 4. Enter blackout mode
+    if (FEATURE_FLAGS.ENABLE_BLACKOUT_MODE) {
+      setIsBlackout(true);
+    }
+  };
+
+  const handleSilentSOS = async () => {
+    if (FEATURE_FLAGS.ENABLE_AUDIO_RECORDING && !isRecording) {
+      await handleStartRecording();
+    }
+    if (!isGuardActive) {
+      setIsGuardActive(true);
+      startSensorMonitoring();
+    }
+    await sendSilentSOS();
+    if (FEATURE_FLAGS.ENABLE_BLACKOUT_MODE) setIsBlackout(true);
+  };
+
+  const exitBlackout = () => setIsBlackout(false);
+
+  // ─── RECORDING ──────────────────────────────────────────
+  const handleStartRecording = async () => {
+    // stopScreamDetection is called inside startEvidenceRecording
+    const recording = await startEvidenceRecording();
+    if (recording) {
+      recordingRef.current = recording;
+      setIsRecording(true);
+    }
+  };
+
+  const handleToggleRecording = async () => {
+    if (isRecording) {
+      await handleStopRecording();
+    } else {
+      await handleStartRecording();
+      showModal('Recording Started', 'Audio evidence is now being recorded.', [
+        { text: 'OK', onPress: hideModal },
+      ]);
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (recordingRef.current) {
+      const evidence = await stopEvidenceRecording();
+      setIsRecording(false);
+      recordingRef.current = null;
+
+      // Restart scream detection after a delay (audio system needs to settle)
+      if (isGuardRef.current && FEATURE_FLAGS.ENABLE_SCREAM_DETECTION) {
+        setTimeout(() => {
+          if (isGuardRef.current && !isRecordingRef.current) {
+            startScreamDetection(() => triggerAlert('scream'))
+              .catch(e => console.log('[Audio] Scream restart failed:', e));
+          }
+        }, 500);
+      }
+
+      if (evidence) {
+        showModal('Evidence Saved', `${evidence.filename}`, [
+          { text: 'OK', onPress: hideModal },
+        ]);
+      }
+    }
+  };
+
+  // ─── FAKE CALL ──────────────────────────────────────────
+  const handleFakeCallPress = () => setShowFakeCallPopup(true);
+
+  const handleSelectStalking = () => {
+    setShowFakeCallPopup(false);
+    setFakeCallType(FAKE_CALL_CONFIG.CALL_TYPES.STALKING);
+    setTimeout(() => {
+      setShowIncomingCall(true);
+      if (ringtoneAsset) playAudioFile(ringtoneAsset, { loop: true });
+    }, 500);
+  };
+
+  const handleSelectCab = () => {
+    setShowFakeCallPopup(false);
+    setFakeCallType(FAKE_CALL_CONFIG.CALL_TYPES.CAB);
+    setTimeout(() => {
+      setShowIncomingCall(true);
+      if (ringtoneAsset) playAudioFile(ringtoneAsset, { loop: true });
+    }, 500);
+  };
+
+  const handleAcceptCall = async () => {
+    setShowIncomingCall(false);
+    await stopAudioPlayback();
+    if (fakeCallType === FAKE_CALL_CONFIG.CALL_TYPES.STALKING) {
+      setShowStalkerCall(true);
+      if (deterrentAsset) playAudioFile(deterrentAsset);
+    } else {
+      setShowCabCall(true);
+      if (cabAudioAsset) playAudioFile(cabAudioAsset);
+    }
+  };
+
+  const handleDeclineCall = async () => {
+    setShowIncomingCall(false);
+    await stopAudioPlayback();
+    setFakeCallType(null);
+  };
+
+  const handleEndCall = async () => {
+    setShowStalkerCall(false);
+    setShowCabCall(false);
+    await stopAudioPlayback();
+    setFakeCallType(null);
+  };
+
+  // ─── RENDER ─────────────────────────────────────────────
+  return (
+    <View style={styles.root}>
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.BG} />
+
+      {showSplash && <SplashScreen onFinish={onSplashFinish} />}
+
+      <Animated.View style={[styles.mainWrap, { opacity: mainOpacity }]}>
+        <SafeAreaView style={styles.container}>
+
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.headerRow}>
+              <View style={styles.brandRow}>
+                <Ionicons name="shield-checkmark" size={20} color={COLORS.ACCENT} />
+                <View style={styles.brandText}>
+                  <Text style={styles.appTitle}>RAKSHA</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.historyBtn}
+                onPress={() => setShowHistory(true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="time-outline" size={22} color={COLORS.TEXT_SECONDARY} />
+              </TouchableOpacity>
             </View>
-        </View>
-    );
+          </View>
+
+          {/* Menu */}
+          <MenuGrid
+            isRecording={isRecording}
+            isGuardActive={isGuardActive}
+            onToggleRecording={handleToggleRecording}
+            onToggleGuard={handleToggleGuard}
+            onFakeCall={handleFakeCallPress}
+          />
+
+          {/* Status */}
+          <View style={styles.statusArea}>
+            {isRecording && (
+              <View style={styles.statusBadge}>
+                <View style={styles.recDot} />
+                <Text style={styles.recText}>Recording</Text>
+              </View>
+            )}
+          </View>
+
+          {/* SOS Slider */}
+          <SOSSlider onActivate={handleSOSActivated} />
+
+        </SafeAreaView>
+      </Animated.View>
+
+      {/* ── Overlays ── */}
+      <FallDetectionAlert
+        isVisible={alertActive}
+        countdown={alertCountdown}
+        alertType={alertType}
+        onCancel={cancelAlert}
+      />
+
+      <BlackoutScreen
+        visible={isBlackout}
+        onExit={exitBlackout}
+        isRecording={isRecording}
+      />
+
+      <FakeCallPopup
+        visible={showFakeCallPopup}
+        onSelectStalking={handleSelectStalking}
+        onSelectCab={handleSelectCab}
+        onClose={() => setShowFakeCallPopup(false)}
+      />
+
+      <FakeCallScreen
+        visible={showIncomingCall}
+        callerName={
+          fakeCallType === FAKE_CALL_CONFIG.CALL_TYPES.STALKING
+            ? FAKE_CALL_CONFIG.CALLER_NAME_STALKER
+            : FAKE_CALL_CONFIG.CALLER_NAME_CAB
+        }
+        onAccept={handleAcceptCall}
+        onDecline={handleDeclineCall}
+      />
+
+      <StalkerCallScreen visible={showStalkerCall} onEndCall={handleEndCall} />
+
+      <CabCallScreen
+        visible={showCabCall}
+        dialogueData={cabDialogueData || DEFAULT_CAB_DIALOGUE}
+        onEndCall={handleEndCall}
+      />
+
+      <HistoryScreen
+        visible={showHistory}
+        onClose={() => setShowHistory(false)}
+      />
+
+      <CustomModal
+        visible={modalConfig.visible}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        buttons={modalConfig.buttons}
+        onClose={hideModal}
+      />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-    c: {
-        flex: 1,
-        backgroundColor: '#000',
-        alignItems: 'center',
-    },
-    top: {
-        marginTop: 50,
-        alignItems: 'center',
-    },
-    t1: {
-        color: '#fff',
-        fontSize: 40,
-        fontWeight: 'bold',
-        letterSpacing: 5
-    },
-    t2: {
-        color: '#888',
-        fontSize: 12,
-        marginTop: 5
-    },
-    mid: {
-        marginTop: 60,
-        alignItems: 'center'
-    },
-    l: {
-        color: '#888',
-        fontSize: 14,
-        marginBottom: 10
-    },
-    off: {
-        width: 80,
-        height: 40,
-        backgroundColor: '#555',
-        borderRadius: 20,
-        justifyContent: 'center',
-        padding: 2
-    },
-    on: {
-        width: 80,
-        height: 40,
-        backgroundColor: 'red',
-        borderRadius: 20,
-        justifyContent: 'center',
-        padding: 2
-    },
-    cir_off: {
-        width: 36,
-        height: 36,
-        backgroundColor: '#fff',
-        borderRadius: 18
-    },
-    cir_on: {
-        width: 36,
-        height: 36,
-        backgroundColor: '#fff',
-        borderRadius: 18,
-        alignSelf: 'flex-end'
-    },
-    s_on: {
-        color: 'red',
-        marginTop: 10,
-        fontSize: 20,
-        fontWeight: 'bold'
-    },
-    s_off: {
-        color: '#888',
-        marginTop: 10,
-        fontSize: 20,
-        fontWeight: 'bold'
-    },
-    bot: {
-        flex: 1,
-        width: '100%',
-        alignItems: 'center',
-        justifyContent: 'center'
-    },
-    red: {
-        width: 250,
-        height: 250,
-        backgroundColor: 'red',
-        borderRadius: 125,
-        alignItems: 'center',
-        justifyContent: 'center',
-        elevation: 10
-    },
-    b2: {
-        alignItems: 'center'
-    },
-    sos: {
-        color: '#fff',
-        fontSize: 60,
-        fontWeight: 'bold'
-    },
-    warn: {
-        color: '#555'
-    },
-    f: {
-        marginBottom: 20
-    },
-    ft: {
-        color: '#555'
-    },
-    rec: {
-        color: 'white',
-        marginTop: 10,
-        fontWeight: 'bold'
-    },
-    locDis: {
-        marginTop: 20,
-        backgroundColor: '#111',
-        padding: 10,
-        borderRadius: 10,
-        width: 200,
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: '#333'
-    },
-    locHead: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 5
-    },
-    dot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        marginRight: 5
-    },
-    locTxt: {
-        color: '#888',
-        fontSize: 10,
-        fontWeight: 'bold'
-    },
-    coord: {
-        color: '#fff',
-        fontFamily: 'monospace',
-        fontSize: 12
-    }
+  root: {
+    flex: 1,
+    backgroundColor: COLORS.BG,
+  },
+  mainWrap: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.BG,
+  },
+  header: {
+    paddingTop: 50,
+    paddingBottom: SPACING.LG,
+    paddingHorizontal: SPACING.LG,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.SM,
+  },
+  brandText: {
+    marginLeft: 4,
+  },
+  appTitle: {
+    fontFamily: TYPOGRAPHY.FONT_FAMILY,
+    fontSize: TYPOGRAPHY.TITLE,
+    color: COLORS.TEXT,
+    fontWeight: '600',
+    letterSpacing: 4,
+  },
+  historyBtn: {
+    padding: SPACING.SM,
+  },
+  statusArea: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.DANGER_DIM,
+    paddingHorizontal: SPACING.MD,
+    paddingVertical: SPACING.SM,
+    borderRadius: 20,
+    gap: SPACING.SM,
+  },
+  recDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.DANGER,
+  },
+  recText: {
+    fontFamily: TYPOGRAPHY.FONT_FAMILY,
+    fontSize: TYPOGRAPHY.CAPTION,
+    color: COLORS.DANGER,
+    letterSpacing: 1,
+  },
 });
