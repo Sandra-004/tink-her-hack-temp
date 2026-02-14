@@ -115,41 +115,47 @@ USER: Please add your screenshots here.
 Format: ![Description](image_url) 
 -->
 
-> [!NOTE]
-> * Screenshot 1: Calling Dad (Fake Call Active)*
-> ![Calling Dad (Fake Call Active)](path/to/screenshot1.png)
+> Simulated “Dad” call in progress. This feature creates a realistic live-call screen with timed audio playback to deter potential threats and create perceived supervision.
+> * Screenshot 1: Calling Dad (Fake Call Active)*![calling dad](https://github.com/user-attachments/assets/7de20e26-714a-4c9f-b49b-0286bac5c15f)
 
-> [!NOTE]
+> ![Calling Dad (Fake Call Active)]()
+
+> Confirmation alert showing that emergency audio evidence has been successfully recorded and securely stored on the device.
+
 > *Add Screenshot 2:Evidence Saved Popup*
-> ![Evidence Saved Popup](path/to/screenshot2.png)
+> ![Evidence Saved Popup]![evidence](https://github.com/user-attachments/assets/58a2b615-e648-412b-9e81-3ac09098220b)
 
-> [!NOTE]
+> Evidence history panel displaying saved recordings with playback, share, and delete options for secure evidence management.
 > *Add Screenshot 3: Recordings History Screen*
 > ![Recordings History Screen](path/to/screenshot3.png)
 
->  [!NOTE]
+> Scenario selection interface allowing users to choose between “Stalking” or “Cab Safety” modes for context-based deterrent calls.
 > *Add Screenshot 4: Fake Call Scenario Selection*
-> ![Fake Call Scenario Selection](path/to/screenshot3.png)
+> ![Fake Call Scenario Selection]![fake call options](https://github.com/user-attachments/assets/d27cda80-bf19-4508-a71b-a878ff2e0563)
 
 
-> [!NOTE]
-> *Add Screenshot 5: Recordings History Screen*
-> ![Recordings History Screen](path/to/screenshot3.png)
+
+> Blackout Mode activated — the screen appears nearly off with only a dim clock visible, concealing active safety monitoring from potential attackers.
+> *Add Screenshot 5: Blackout Mode (Stealth Screen)*
+> ![Blackout Mode (Stealth Screen)]![filter screen](https://github.com/user-attachments/assets/7fb97105-6253-41f0-8b54-2d53c9e13f8e)
 
 
-> [!NOTE]
-> *Add Screenshot 3: Home Screen (Main Dashboard)*
-> ![Home Screen (Main Dashboard)](path/to/screenshot3.png)
+> Minimalist dashboard showing core safety controls: Record, Guard Mode, Fake Call, Status, and the One-Swipe SOS slider.
+> *Add Screenshot 6: Home Screen (Main Dashboard)*
+> ![Home Screen (Main Dashboard)]()
+![home](https://github.com/user-attachments/assets/3d02c685-4742-4e92-87ec-071f1985f353)
 
 
-> [!NOTE]
-> *Add Screenshot 3: Emergency Contacts & History*
-> ![Recordings History Screen](path/to/screenshot3.png)
+> Real-time confirmation that stealth audio recording has started immediately after emergency activation.
+> *Add Screenshot 7:Recording!
+ Started Alert*
+> ![Recording Started Alert][recording started](https://github.com/user-attachments/assets/7e7c979f-d1d8-4871-8e35-d254bff24c11)
 
 
-> [!NOTE]
-> *Add Screenshot 3: Emergency Contacts & History*
-> ![Recordings History Screen](path/to/screenshot3.png)
+> Automated WhatsApp emergency message containing live GPS coordinates and confirmation that audio evidence recording is in progress.
+> *Add Screenshot 8: WhatsApp Emergency Alert*
+> ![WhatsApp Emergency Alert]
+![watsapp alert](https://github.com/user-attachments/assets/845f324e-5726-43da-8ffd-3bb29cea18e5)
 
 
 
