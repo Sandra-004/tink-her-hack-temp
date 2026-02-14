@@ -116,16 +116,41 @@ Format: ![Description](image_url)
 -->
 
 > [!NOTE]
-> *Add Screenshot 1: Guard Mode Home Screen*
-> ![Guard Mode UI](path/to/screenshot1.png)
+> * Screenshot 1: Calling Dad (Fake Call Active)*
+> ![Calling Dad (Fake Call Active)](path/to/screenshot1.png)
 
 > [!NOTE]
-> *Add Screenshot 2: SOS Alert & Countdown*
-> ![SOS Alert](path/to/screenshot2.png)
+> *Add Screenshot 2:Evidence Saved Popup*
+> ![Evidence Saved Popup](path/to/screenshot2.png)
+
+> [!NOTE]
+> *Add Screenshot 3: Recordings History Screen*
+> ![Recordings History Screen](path/to/screenshot3.png)
+
+>  [!NOTE]
+> *Add Screenshot 4: Fake Call Scenario Selection*
+> ![Fake Call Scenario Selection](path/to/screenshot3.png)
+
+
+> [!NOTE]
+> *Add Screenshot 5: Recordings History Screen*
+> ![Recordings History Screen](path/to/screenshot3.png)
+
+
+> [!NOTE]
+> *Add Screenshot 3: Home Screen (Main Dashboard)*
+> ![Home Screen (Main Dashboard)](path/to/screenshot3.png)
+
 
 > [!NOTE]
 > *Add Screenshot 3: Emergency Contacts & History*
-> ![Contacts & History](path/to/screenshot3.png)
+> ![Recordings History Screen](path/to/screenshot3.png)
+
+
+> [!NOTE]
+> *Add Screenshot 3: Emergency Contacts & History*
+> ![Recordings History Screen](path/to/screenshot3.png)
+
 
 
 ### Diagrams
