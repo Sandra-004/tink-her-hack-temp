@@ -157,14 +157,16 @@ Format: ![Description](image_url)
 > ![WhatsApp Emergency Alert]
 ![watsapp alert](https://github.com/user-attachments/assets/845f324e-5726-43da-8ffd-3bb29cea18e5)
 
-
+**working video drive link:** https://drive.google.com/file/d/1hw9K_o964dtnUCXr6Nh-vkWLvTjiRPgU/view?usp=sharing
 
 ### Diagrams
 
-**System Architecture:**
+**System Architecture:**<img width="1024" height="1536" alt="architecture" src="https://github.com/user-attachments/assets/aff95aff-9fe5-42d7-b6bb-747f6ba474ad" />
+
 User Gesture → Accelerometer Listener → Trigger Engine → Audio Playback → Location Fetch → WhatsApp Deep Link
 
-**Application Workflow:**
+**Application Workflow:**<img width="1536" height="1024" alt="workflow" src="https://github.com/user-attachments/assets/74fc80ee-8a1c-4e3a-8b77-f35de7fdac4a" />
+
 User Activates Guard Mode → Shake/Fall/Scream Detected → Deterrence Audio Plays → GPS Captured → SOS Message Drafted → Help Notified.
 
 ---
@@ -201,6 +203,7 @@ We view AI not as a creator, but as a powerful tool that allowed us to focus mor
 - User Research & Testing
 
 ---
+
 
 ## License
 
