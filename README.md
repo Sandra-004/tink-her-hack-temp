@@ -205,7 +205,7 @@ We view AI not as a creator, but as a powerful tool that allowed us to focus mor
 ---
 
 ##RELEASE-MOBILE APP
-**Android APK Release:**
+**Android APK Release:**https://github.com/Sandra-004/raksha-the-intelligent-guardian/releases/tag/Raksha
 
 ## License
 
