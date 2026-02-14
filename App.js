@@ -11,6 +11,7 @@ import {
   Platform,
   TouchableOpacity,
   Animated,
+  Modal,
 } from 'react-native';
 import { Accelerometer } from 'expo-sensors';
 import * as Haptics from 'expo-haptics';
@@ -20,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import SplashScreen from './src/components/SplashScreen';
 import MenuGrid from './src/components/MenuGrid';
 import SOSSlider from './src/components/SOSSlider';
+import SOSButton from './src/components/SOSButton';
 import BlackoutScreen from './src/components/BlackoutScreen';
 import FallDetectionAlert from './src/components/FallDetectionAlert';
 import CustomModal from './src/components/CustomModal';
@@ -30,7 +32,7 @@ import CabCallScreen from './src/components/CabCallScreen';
 import HistoryScreen from './src/components/HistoryScreen';
 
 // Config & Utils
-import { COLORS, TYPOGRAPHY, SPACING, FEATURE_FLAGS, FAKE_CALL_CONFIG, SENSOR_THRESHOLDS } from './src/config/constants';
+import { COLORS, TYPOGRAPHY, SPACING, RADIUS, FEATURE_FLAGS, FAKE_CALL_CONFIG, SENSOR_THRESHOLDS } from './src/config/constants';
 import { calculateAccelerationMagnitude, FallDetector } from './src/utils/sensorUtils';
 import { requestLocationPermission, sendEmergencyAlert, sendSilentSOS } from './src/utils/locationUtils';
 import {
@@ -44,14 +46,14 @@ import {
   cleanupAudio,
 } from './src/utils/audioUtils';
 
-// ─── Audio Assets (drop in src/assets/audio/) ───
+// ─── Audio Assets ───
 let ringtoneAsset = null;
 let deterrentAsset = null;
 let cabAudioAsset = null;
 let cabDialogueData = null;
 
 try { ringtoneAsset = require('./src/assets/audio/ringtone.mp3'); } catch (e) { }
-try { deterrentAsset = require('./src/assets/audio/deterrent.mp3'); } catch (e) { }
+try { deterrentAsset = require('./src/assets/audio/stalker_call.mp3'); } catch (e) { }
 try { cabAudioAsset = require('./src/assets/audio/cab.mp3'); } catch (e) { }
 try { cabDialogueData = require('./src/assets/audio/cab.json'); } catch (e) { }
 
@@ -71,6 +73,10 @@ export default function App() {
   const [isGuardActive, setIsGuardActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isBlackout, setIsBlackout] = useState(false);
+
+  // Settings
+  const [showSettings, setShowSettings] = useState(false);
+  const [sosMode, setSosMode] = useState('slider'); // 'slider' | 'button'
 
   // Alert
   const [alertActive, setAlertActive] = useState(false);
@@ -100,7 +106,6 @@ export default function App() {
   const isGuardRef = useRef(false);
   const isRecordingRef = useRef(false);
 
-  // Keep refs in sync with state (for async callbacks)
   useEffect(() => { isGuardRef.current = isGuardActive; }, [isGuardActive]);
   useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
 
@@ -183,22 +188,17 @@ export default function App() {
     }
 
     if (newState) {
-      // Start monitoring
       startSensorMonitoring();
-
-      // Start scream detection if not currently recording
       if (FEATURE_FLAGS.ENABLE_SCREAM_DETECTION && !isRecordingRef.current) {
         setTimeout(() => {
           startScreamDetection(() => triggerAlert('scream'));
         }, 200);
       }
-
       showModal('Guard Mode Armed',
-        'Fall detection and scream detection are now active.\nSlide SOS bar for emergency.',
+        'Fall detection and scream detection are now active.',
         [{ text: 'OK', onPress: hideModal }]
       );
     } else {
-      // Stop everything
       stopSensorMonitoring();
       await stopScreamDetection();
     }
@@ -243,30 +243,20 @@ export default function App() {
 
   // ─── SOS ────────────────────────────────────────────────
   const handleSOSActivated = async () => {
-    console.log('[SOS] Slider activated');
+    console.log('[SOS] Activated');
     if (Platform.OS !== 'web') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
 
-    // 1. Start recording
     if (FEATURE_FLAGS.ENABLE_AUDIO_RECORDING && !isRecording) {
       await handleStartRecording();
     }
-
-    // 2. Turn on guard mode
     if (!isGuardActive) {
       setIsGuardActive(true);
       startSensorMonitoring();
-      // Don't start scream detection — we just started evidence recording
     }
-
-    // 3. Send emergency alert
     await sendEmergencyAlert();
-
-    // 4. Enter blackout mode
-    if (FEATURE_FLAGS.ENABLE_BLACKOUT_MODE) {
-      setIsBlackout(true);
-    }
+    if (FEATURE_FLAGS.ENABLE_BLACKOUT_MODE) setIsBlackout(true);
   };
 
   const handleSilentSOS = async () => {
@@ -285,7 +275,6 @@ export default function App() {
 
   // ─── RECORDING ──────────────────────────────────────────
   const handleStartRecording = async () => {
-    // stopScreamDetection is called inside startEvidenceRecording
     const recording = await startEvidenceRecording();
     if (recording) {
       recordingRef.current = recording;
@@ -310,7 +299,6 @@ export default function App() {
       setIsRecording(false);
       recordingRef.current = null;
 
-      // Restart scream detection after a delay (audio system needs to settle)
       if (isGuardRef.current && FEATURE_FLAGS.ENABLE_SCREAM_DETECTION) {
         setTimeout(() => {
           if (isGuardRef.current && !isRecordingRef.current) {
@@ -352,12 +340,24 @@ export default function App() {
   const handleAcceptCall = async () => {
     setShowIncomingCall(false);
     await stopAudioPlayback();
+
+    // Small delay to let audio system settle
+    await new Promise(resolve => setTimeout(resolve, 200));
+
     if (fakeCallType === FAKE_CALL_CONFIG.CALL_TYPES.STALKING) {
       setShowStalkerCall(true);
-      if (deterrentAsset) playAudioFile(deterrentAsset);
+      if (deterrentAsset) {
+        console.log('[Audio] Playing stalker deterrent audio');
+        playAudioFile(deterrentAsset);
+      } else {
+        console.log('[Audio] No stalker audio file found');
+      }
     } else {
       setShowCabCall(true);
-      if (cabAudioAsset) playAudioFile(cabAudioAsset);
+      if (cabAudioAsset) {
+        console.log('[Audio] Playing cab audio');
+        playAudioFile(cabAudioAsset);
+      }
     }
   };
 
@@ -387,14 +387,24 @@ export default function App() {
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerRow}>
+              {/* Settings button (left) */}
+              <TouchableOpacity
+                style={styles.headerBtn}
+                onPress={() => setShowSettings(true)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="settings-outline" size={22} color={COLORS.TEXT_SECONDARY} />
+              </TouchableOpacity>
+
+              {/* Brand (center) */}
               <View style={styles.brandRow}>
                 <Ionicons name="shield-checkmark" size={20} color={COLORS.ACCENT} />
-                <View style={styles.brandText}>
-                  <Text style={styles.appTitle}>RAKSHA</Text>
-                </View>
+                <Text style={styles.appTitle}>RAKSHA</Text>
               </View>
+
+              {/* History button (right) */}
               <TouchableOpacity
-                style={styles.historyBtn}
+                style={styles.headerBtn}
                 onPress={() => setShowHistory(true)}
                 activeOpacity={0.7}
               >
@@ -422,11 +432,53 @@ export default function App() {
             )}
           </View>
 
-          {/* SOS Slider */}
-          <SOSSlider onActivate={handleSOSActivated} />
+          {/* SOS — Slider or Button */}
+          {sosMode === 'slider' ? (
+            <SOSSlider onActivate={handleSOSActivated} />
+          ) : (
+            <SOSButton onActivate={handleSOSActivated} />
+          )}
 
         </SafeAreaView>
       </Animated.View>
+
+      {/* ── Settings Modal ── */}
+      <Modal visible={showSettings} transparent animationType="fade" onRequestClose={() => setShowSettings(false)}>
+        <TouchableOpacity
+          style={styles.settingsOverlay}
+          activeOpacity={1}
+          onPress={() => setShowSettings(false)}
+        >
+          <View style={styles.settingsCard} onStartShouldSetResponder={() => true}>
+            <Text style={styles.settingsTitle}>Settings</Text>
+
+            <View style={styles.settingsSection}>
+              <Text style={styles.settingsLabel}>SOS Activation</Text>
+              <View style={styles.toggleRow}>
+                <TouchableOpacity
+                  style={[styles.toggleBtn, sosMode === 'slider' && styles.toggleBtnActive]}
+                  onPress={() => setSosMode('slider')}
+                >
+                  <Ionicons name="arrow-forward" size={16} color={sosMode === 'slider' ? COLORS.TEXT : COLORS.TEXT_MUTED} />
+                  <Text style={[styles.toggleText, sosMode === 'slider' && styles.toggleTextActive]}>Slider</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.toggleBtn, sosMode === 'button' && styles.toggleBtnActive]}
+                  onPress={() => setSosMode('button')}
+                >
+                  <Ionicons name="alert-circle" size={16} color={sosMode === 'button' ? COLORS.TEXT : COLORS.TEXT_MUTED} />
+                  <Text style={[styles.toggleText, sosMode === 'button' && styles.toggleTextActive]}>Button</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.settingsClose} onPress={() => setShowSettings(false)}>
+              <Text style={styles.settingsCloseText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* ── Overlays ── */}
       <FallDetectionAlert
@@ -506,13 +558,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  headerBtn: {
+    padding: SPACING.SM,
+    width: 40,
+    alignItems: 'center',
+  },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.SM,
-  },
-  brandText: {
-    marginLeft: 4,
   },
   appTitle: {
     fontFamily: TYPOGRAPHY.FONT_FAMILY,
@@ -520,9 +574,6 @@ const styles = StyleSheet.create({
     color: COLORS.TEXT,
     fontWeight: '600',
     letterSpacing: 4,
-  },
-  historyBtn: {
-    padding: SPACING.SM,
   },
   statusArea: {
     flex: 1,
@@ -549,5 +600,78 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.CAPTION,
     color: COLORS.DANGER,
     letterSpacing: 1,
+  },
+  // Settings Modal
+  settingsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsCard: {
+    width: '80%',
+    backgroundColor: COLORS.SURFACE,
+    borderRadius: RADIUS.LG,
+    padding: SPACING.XL,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+  },
+  settingsTitle: {
+    fontFamily: TYPOGRAPHY.FONT_FAMILY,
+    fontSize: TYPOGRAPHY.HEADING,
+    color: COLORS.TEXT,
+    fontWeight: '600',
+    marginBottom: SPACING.XL,
+  },
+  settingsSection: {
+    marginBottom: SPACING.XL,
+  },
+  settingsLabel: {
+    fontFamily: TYPOGRAPHY.FONT_FAMILY,
+    fontSize: TYPOGRAPHY.CAPTION,
+    color: COLORS.TEXT_SECONDARY,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: SPACING.MD,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    gap: SPACING.SM,
+  },
+  toggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.SM,
+    paddingVertical: SPACING.MD,
+    borderRadius: RADIUS.MD,
+    backgroundColor: COLORS.ELEVATED,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+  },
+  toggleBtnActive: {
+    backgroundColor: COLORS.ACCENT_DIM,
+    borderColor: COLORS.ACCENT,
+  },
+  toggleText: {
+    fontFamily: TYPOGRAPHY.FONT_FAMILY,
+    fontSize: TYPOGRAPHY.BODY,
+    color: COLORS.TEXT_MUTED,
+  },
+  toggleTextActive: {
+    color: COLORS.TEXT,
+  },
+  settingsClose: {
+    alignItems: 'center',
+    paddingVertical: SPACING.MD,
+    borderRadius: RADIUS.MD,
+    backgroundColor: COLORS.ACCENT,
+  },
+  settingsCloseText: {
+    fontFamily: TYPOGRAPHY.FONT_FAMILY,
+    fontSize: TYPOGRAPHY.BODY,
+    color: COLORS.TEXT,
+    fontWeight: '600',
   },
 });

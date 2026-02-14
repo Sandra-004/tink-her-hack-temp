@@ -93,7 +93,7 @@ export const EMERGENCY_CONFIG = {
 export const FAKE_CALL_CONFIG = {
   RINGTONE_DURATION_MS: 15000,
   CALLER_NAME_STALKER: 'Dad',
-  CALLER_NAME_CAB: 'Mom',
+  CALLER_NAME_CAB: 'Dad',
   CALL_TYPES: {
     STALKING: 'stalking',
     CAB: 'cab',
